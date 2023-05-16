@@ -1,7 +1,9 @@
 #!/usr/bin/python3
 
-# Part of VASLOO Virtual Autonomous System
-# Released under MIT License, see VASLOO/LICENSE for more info
+# python3 <scriptname> --help for help
+
+# Part of VASSER Virtual Autonomous System
+# Released under MIT License, see github/chubekVASSER/LICENSE for more info
 
 # this script contain a simple, limited implementation of the
 # DNS query system in Python as a part of Panah application
@@ -146,6 +148,7 @@ ENCODINGS_PY = [
  'utf-32'
  ]
 
+
 errors_explain = {
 	str(RCODE_FORMATERROR): "This is an rcode error, as specified by the RFC. This means there was a format error in the query.",
 	str(RCODE_SERVERFAIL): "This is an rcode error, as specified by the RFC. This means there was a server failure on the resolver's par, but sometimes it just means the formatting was wrong.",
@@ -155,6 +158,7 @@ errors_explain = {
 	str(ERROR_XIDMISMATCH): "This is a DNSRezulf error, This means the resolver sent an XID that did not match the XID we sent to it.",
 	str(ERROR_NORECURSION): "This is a DNSRezulf error, this means although we specified recursion, the resolver does not support it.",
 }
+
 
 def dataclass(cls: type) -> type:
 	args = {k: v for k, v in cls.__dict__.items() if not k.startswith("__")}
@@ -214,7 +218,12 @@ def decode_record_rdata(codec: str, rdata: bytearray) -> str:
 		if codec not in ENCODINGS_PY:
 			error_out(f"Encoding {codec} is not present in Python's list of available codecs\nPlease pass `{execname} {scriptname} --encoding list` to see a full list of available codecs")
 		else:
-			return rdata.decode(codec)
+			try:
+				return rdata.decode(codec)
+			except:
+				print("Your selected codec could not decode the record data, returning raw...")
+			finally:
+				return "[ " + ', '.join([str(int(b)) for b in rdata]) + "]"
 
 # Part B: Types
 
@@ -441,17 +450,19 @@ if __name__ == "__main__":
 		print("If you pass `list` to --encoding, it will print all the available codecs, and exit.")
 		print("If you pass an error code to --errors, it will explain the error code, and exit.")
 		print("Only standard queries are available. No inverse query and whatnot.")
-		print("\033[1m")
-		print("|   Parameter     |      Purpose        | Default")
-		print("[--resolver/-rs]  | DNS Resolver Server | 8.8.8.8")
-		print("[--port/-p] 		 | DNS Resolver Port   | 53")
-		print("[--address/-ad]   | Address to Resolver | example.com")
-		print("[--rectype|-rr]   | RR Type    		   | A")
-		print("[--recursion/-re] | Recursive Search?   | 1")
-		print("[--encoding/-en]  | CNAME/TXT Codec 	   | raw")
-		print("[--errors/-er     | Error code explain  | None")
+		print()
+		print("\033[1mArguments:")
+		print("[Long/Short]; Purpose; Default")
+		print("[--resolver/-rs]; DNS Resolver Server; 8.8.8.8")
+		print("[--port/-p]; DNS Resolver Port; 53")
+		print("[--address/-ad]; Address to Resolver; example.com")
+		print("[--rectype/-rr]; R Type; A")
+		print("[--recursion/-re]; Recursive Search; 1")
+		print("[--encoding/-en]; CNAME/TXT Codec; raw")
+		print("[--errors/-er; Error code explain; None")
 		print("\033[0m")
 		print(f"Example: {execname} {scriptname} -ad google.com --rectype AAAA")
+		print(f"On Unix-like systems, this script can be ran via the Shebang: {scriptname} -rs 1.1.1.1 -ad reddit.com")
 		exit(1)
 
 	args = {	
@@ -532,10 +543,10 @@ if __name__ == "__main__":
 		data = decode_record_rdata(args['codec'], data)
 
 	if rectype == RECORD_A:
-		print(f"\t{address} | A | {ttl} | {'.'.join([str(c) for c in data])}")
+		print(f"\t{address} | A | ttl={ttl} | {'.'.join([str(c) for c in data])}")
 	elif rectype == RECORD_AAAA:
-		print(f"\t{address} | AAAA | {ttl} | {':'.join([format(int.from_bytes([c1, c2], byteorder='big', signed=False), 'x') for c1, c2 in zip(data[::2], data[1::2])])}")
+		print(f"\t{address} | AAAA | ttl={ttl} | {':'.join([format(int.from_bytes([c1, c2], byteorder='big', signed=False), 'x') for c1, c2 in zip(data[::2], data[1::2])])}")
 	elif rectype == RECORD_TXT:
-		print(f"\t{address} | TXT | {ttl} | `{data}`")
+		print(f"\t{address} | TXT | ttl={ttl} | `{data}`")
 	else:
-		print(f"\t{address} | CNAME | {ttl} | `{data}`")
+		print(f"\t{address} | CNAME | ttl={ttl} | `{data}`")
