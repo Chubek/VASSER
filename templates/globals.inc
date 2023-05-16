@@ -1,0 +1,12 @@
+.global asciizhost_to_inetaddr
+.global cshort_port_to_netorder
+.global short_from_bytes
+.global int_from_shorts
+.global long_from_ints
+.global resolve_dns_address
+.global print_nullterm_string_to_stdout
+.global print_nullterm_string_to_sterr
+.global copy_memory_from_bytewise
+.global clear_memory_qwordwise
+.global clear_memory_bytewise
+.global reverse_string_nbytes
