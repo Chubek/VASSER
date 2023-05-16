@@ -1,11 +1,82 @@
 from os import open, close, read, write, lseek, SEEK_SET, O_CREAT, O_WRONLY, O_RDONLY
 from stat import S_IRUSR, S_IWUSR
+from operator import rshift, lshift, add, and_, ge, le, sub
 
 
 MAX_BLOCK_SIZE = 65536
-MAX_HUFFM_SIZE = 65536
-MAX_HCODE_SIZE = 65535
-MAX_CONACT_LEN = 8
+
+MAX_HUFFM_SIZE = 16777216
+
+AND_OPRDS_CNTZ = (
+	0x00ffffffffffffff,
+	0x0000ffffffffffff,
+	0x000000ffffffffff,
+	0x00000000ffffffff,
+	0x0000000000ffffff,
+	0x000000000000ffff,
+	0x00000000000000ff,
+	0x000000000000000f,
+	0x0000000000000003,
+	0x0000000000000001,
+)
+
+AND_OPRDS_CNLZ = (
+	0xffffffffffffff00,
+	0xffffffffffff0000,
+	0xffffffffff000000,
+	0xffffffff00000000,
+	0xffffff0000000000,
+	0xffff000000000000,
+	0xff00000000000000,
+	0xf000000000000000,
+	0xc000000000000000,
+	0x8000000000000000,
+)
+
+CNT_FIRSTSET_ADDS_SHIFTS = (56, 48, 40, 32, 24, 16, 8, 4, 2, 1)
+
+MAX_U2PN = [
+	0x0000000000000000, 0x0000000000000001, 0x0000000000000003, 0x0000000000000007, 
+	0x000000000000000f, 0x000000000000001f, 0x000000000000003f, 0x000000000000007f, 
+	0x00000000000000ff, 0x00000000000001ff, 0x00000000000003ff, 0x00000000000007ff, 
+	0x0000000000000fff, 0x0000000000001fff, 0x0000000000003fff, 0x0000000000007fff, 
+	0x000000000000ffff, 0x000000000001ffff, 0x000000000003ffff, 0x000000000007ffff, 
+	0x00000000000fffff, 0x00000000001fffff, 0x00000000003fffff, 0x00000000007fffff, 
+	0x0000000000ffffff, 0x0000000001ffffff, 0x0000000003ffffff, 0x0000000007ffffff, 
+	0x000000000fffffff, 0x000000001fffffff, 0x000000003fffffff, 0x000000007fffffff, 
+	0x00000000ffffffff, 0x00000001ffffffff, 0x00000003ffffffff, 0x00000007ffffffff, 
+	0x0000000fffffffff, 0x0000001fffffffff, 0x0000003fffffffff, 0x0000007fffffffff, 
+	0x000000ffffffffff, 0x000001ffffffffff, 0x000003ffffffffff, 0x000007ffffffffff, 
+	0x00000fffffffffff, 0x00001fffffffffff, 0x00003fffffffffff, 0x00007fffffffffff, 
+	0x0000ffffffffffff, 0x0001ffffffffffff, 0x0003ffffffffffff, 0x0007ffffffffffff, 
+	0x000fffffffffffff, 0x001fffffffffffff, 0x003fffffffffffff, 0x007fffffffffffff, 
+	0x00ffffffffffffff, 0x01ffffffffffffff, 0x03ffffffffffffff, 0x07ffffffffffffff, 
+	0x0fffffffffffffff, 0x1fffffffffffffff, 0x3fffffffffffffff, 0x7fffffffffffffff,
+]
+
+AND_CNTS = [
+	0x01, 0x01, 0x03, 0x03, 0x07, 0x07, 0x07, 0x07,
+	0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f,
+	0x1f, 0x1f, 0x1f, 0x1f, 0x1f, 0x1f, 0x1f, 0x1f,
+	0x1f, 0x1f, 0x1f, 0x1f, 0x1f, 0x1f, 0x1f, 0x1f,
+	0x3f, 0x3f, 0x3f, 0x3f, 0x3f, 0x3f, 0x3f, 0x3f,
+	0x3f, 0x3f, 0x3f, 0x3f, 0x3f, 0x3f, 0x3f, 0x3f,
+	0x3f, 0x3f, 0x3f, 0x3f, 0x3f, 0x3f, 0x3f, 0x3f,
+	0x3f, 0x3f, 0x3f, 0x3f, 0x3f, 0x3f, 0x3f, 0x3f,
+]
+
+LEN_CNTS = [
+	1, 1, 2, 2, 3, 3, 3, 3,
+	4, 4, 4, 4, 4, 4, 4, 4,
+	5, 5, 5, 5, 5, 5, 5, 5,
+	5, 5, 5, 5, 5, 5, 5, 5,
+	6, 6, 6, 6, 6, 6, 6, 6,
+	6, 6, 6, 6, 6, 6, 6, 6,
+	6, 6, 6, 6, 6, 6, 6, 6,
+	6, 6, 6, 6, 6, 6, 6, 6,
+]
+
+
 
 def dataclass(cls: type) -> type:
 	args = {k: v for k, v in cls.__dict__.items() if not k.startswith("__")}
@@ -24,9 +95,32 @@ def dataclass(cls: type) -> type:
 	return cls
 
 
-def postincr(self):
+
+def postop(self, other=1, operator=add):
 	n = self.__num__
-	self.__num__ += 1
+	self.__num__ = operator(self.__num__, other.__num__ if "__num__" in vars(other.__class__) else other)
+	return n
+
+
+
+def preop(self, other=1, operator=add):
+	self.__num__ = operator(self.__num__, other.__num__ if "__num__" in vars(other.__class__) else other)	
+	return self.__num__
+
+
+
+def passthru(self, other=1, operator=add):
+	return operator(self.__num__, other.__num__ if "__num__" in vars(other.__class__) else other)
+
+
+
+def bitsetcnt(self, shiftop, ands, shadds=CNT_FIRSTSET_ADDS_SHIFTS):
+	if self.__num__ == 0: return 64
+	n = 0
+	for andoprd_, shiftoprd, addoprd in zip(ands, shadds, shadds):
+		if not passthru(self, andoprd_, and_):
+			n +=  addoprd
+			preop(self, shiftoprd, shiftop)
 	return n
 
 
@@ -36,11 +130,13 @@ def djb2short(s: bytes):
 		hash = (((hash << 5) + hash) + c) % MAX_BLOCK_SIZE
 	return hash
 
+
 @dataclass
 class AdaptiveHuffmanCoder:
 	codes = list(range(MAX_HUFFM_SIZE))
 	counts = [0] * MAX_HUFFM_SIZE
 	max_so_far = 0
+
 
 	def update_table(self, symbol: int):
 		self.counts[symbol] += 1
@@ -49,8 +145,36 @@ class AdaptiveHuffmanCoder:
 			self.codes[symbol] = self.codes[self.max_so_far]
 			self.codes[self.max_so_far] = tmp
 
-			
 
+	def write_encoded_count(self, fd):
+		oprpack = {
+			"__ge__": lambda self, other: passthru(self, other, ge), 
+			"__le__": lambda self, other: passthru(self, other, le), 
+			"__sub__": lambda self, other: passthru(self, other, sub),
+			"__rshift__": lambda self, other: passthru(self, other, rshift),
+			"__rrshift__": lambda self, other: passthru(self, other, rshift),
+			"__lshift__": lambda self, other: passthru(self, other, lshift),
+			"__str__": lambda self: str(self.__num__)
+		}
+		args_clz = (lshift, AND_OPRDS_CNLZ)
+		args_ctz = (rshift, AND_OPRDS_CNTZ)
+		for i in range(0, MAX_HUFFM_SIZE, 4):
+			c1, c2, c3, c4 = self.counts[i:i + 4]
+			cnt = int.from_bytes(bytearray([c1, c2, c3, c4]), byteorder='little', signed=False)
+			ctz = type("Ctz", (), {"__num__": cnt, "__invert__": lambda self: bitsetcnt(self, *args_ctz), **oprpack})()
+			clz = type("Clz", (), {"__num__": cnt, "__invert__": lambda self: bitsetcnt(self, *args_clz), **oprpack})()
+			ctz = ~ctz
+			clz = ~clz
+			lenset = ctz - clz if ctz >= clz else clz - ctz
+			cnt = cnt >> ctz
+			cnt &= MAX_U2PN[dif]
+			ctz &= AND_CNTS[ctz]
+			clz &= AND_CNTS[clz]
+			code = ctz | (cnt << ctz) | (clz << (dif))
+			print(code)
+			print(ctz, clz, cnt, code.to_bytes(3, byteorder='little', signed=False))
+			#write(fd, int.to_bytes(code, byteorder='little', signed=False))
+			exit()
 
 @dataclass
 class PanLzypTrie:
@@ -127,11 +251,5 @@ def lzy_compress(inpf: str, outf: str):
 
 
 c = AdaptiveHuffmanCoder()
-c.update_table(2)
-c.update_table(2)
-c.update_table(3)
-c.update_table(5)
-c.update_table(5)
-c.update_table(5)
-print(c.codes[:10])
-print(c.counts[:10])
+c.counts = [12, 33, 1, 9 ,1]
+c.write_encoded_count(0)
